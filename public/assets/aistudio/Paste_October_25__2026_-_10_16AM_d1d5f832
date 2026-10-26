@@ -1,0 +1,475 @@
+import os, zipfile, textwrap
+
+base = "/mnt/data/Karma_CSIR_NET_Chemical_Science_App"
+files = {
+"settings.gradle.kts": r'''
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories { google(); mavenCentral() }
+}
+rootProject.name = "KarmaCSIRNetStudyApp"
+include(":app")
+''',
+"build.gradle.kts": r'''
+plugins {
+    id("com.android.application") version "8.7.3" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+}
+''',
+"gradle.properties": r'''
+org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+kotlin.code.style=official
+''',
+"app/build.gradle.kts": r'''
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+android {
+    namespace = "com.karmalearning.csirnet"
+    compileSdk = 35
+    defaultConfig {
+        applicationId = "com.karmalearning.csirnet"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+    }
+    buildFeatures { compose = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+dependencies {
+    implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+    implementation("androidx.activity:activity-compose:1.10.0")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+}
+''',
+"app/src/main/AndroidManifest.xml": r'''
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:allowBackup="true" android:label="Karma CSIR-NET Chemistry"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar" android:supportsRtl="true">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+''',
+"app/src/main/java/com/karmalearning/csirnet/MainActivity.kt": r'''
+package com.karmalearning.csirnet
+
+import android.content.ContentValues
+import android.content.Intent
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import android.os.Bundle
+import android.provider.MediaStore
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Book
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val Navy = Color(0xFF102B50)
+
+data class TopicNote(val unit: String, val title: String, val body: String)
+data class Mcq(val unit: String, val question: String, val options: List<String>, val answer: Int, val explanation: String)
+
+private val topicNotes = listOf(
+    TopicNote("Organic Chemistry", "Aromaticity / एरोमैटिकता", """
+A compound is aromatic when it is cyclic, planar, continuously conjugated, and has (4n + 2) π electrons (Hückel rule).
+किसी चक्रीय, समतलीय और निरंतर संयुग्मित प्रणाली में (4n + 2) π इलेक्ट्रॉन होने पर वह सामान्यतः एरोमैटिक होती है।
+
+Checklist / जाँच:
+• Cyclic / चक्रीय
+• Planar or effectively planar / समतलीय
+• Continuous p-orbital overlap / निरंतर p-कक्षक अतिव्यापन
+• (4n + 2) π electrons for aromaticity / एरोमैटिकता हेतु (4n + 2) π इलेक्ट्रॉन
+
+Caution: apply the rule only when the structural assumptions are satisfied. This is a concise revision note, not a full derivation.
+""".trimIndent()),
+    TopicNote("Inorganic Chemistry", "Crystal Field Splitting / क्रिस्टल क्षेत्र विभाजन", """
+In an octahedral field, d orbitals split into lower-energy t2g and higher-energy eg sets.
+अष्टफलकीय क्षेत्र में d-कक्षक कम ऊर्जा वाले t2g और अधिक ऊर्जा वाले eg समूहों में विभाजित होते हैं।
+
+Δo is the octahedral splitting energy. Spin state depends on the balance between Δo and pairing energy.
+Δo अष्टफलकीय विभाजन ऊर्जा है। स्पिन अवस्था Δo और pairing energy के संतुलन पर निर्भर करती है।
+
+For exam problems, identify metal oxidation state, d-electron count, ligand field strength, and geometry first.
+परीक्षा प्रश्नों में पहले ऑक्सीकरण अवस्था, d-इलेक्ट्रॉन संख्या, लिगैंड क्षेत्र की शक्ति और ज्यामिति पहचानें।
+""".trimIndent()),
+    TopicNote("Physical Chemistry", "Chemical Kinetics / रासायनिक गतिकी", """
+For a reaction, rate law is determined experimentally; it cannot generally be inferred from the balanced overall equation.
+अभिक्रिया का rate law प्रयोग से निर्धारित होता है; इसे सामान्यतः केवल संतुलित समीकरण से नहीं निकाला जा सकता।
+
+For a first-order reaction: ln([A]0/[A]t) = kt.
+Half-life for a first-order reaction: t1/2 = 0.693/k.
+
+Check units of k against the overall order. For a first-order process, k has units of time⁻¹.
+""".trimIndent()),
+    TopicNote("Spectroscopy", "Beer–Lambert Law / बीयर–लैम्बर्ट नियम", """
+Absorbance A = εlc, where ε is molar absorptivity, l is path length, and c is concentration.
+अवशोषण A = εlc, जहाँ ε मोलर अवशोषण गुणांक, l पथ-लंबाई और c सांद्रता है।
+
+Under suitable conditions, absorbance is proportional to concentration. Deviations can arise at high concentration, from chemical changes, or from instrumental limitations.
+उपयुक्त परिस्थितियों में absorbance सांद्रता के समानुपाती होता है।
+""".trimIndent()),
+    TopicNote("Coordination Chemistry", "Coordination Number / समन्वय संख्या", """
+Coordination number is the number of donor atoms directly bonded to the central metal.
+समन्वय संख्या केंद्रीय धातु से सीधे जुड़े donor atoms की संख्या है।
+
+Do not confuse coordination number with oxidation state or the number of ligands: a bidentate ligand contributes two donor atoms.
+समन्वय संख्या को ऑक्सीकरण अवस्था या लिगैंडों की संख्या न समझें; द्विदन्तुर लिगैंड दो donor atoms देता है।
+""".trimIndent()),
+    TopicNote("Pericyclic Reactions", "Electrocyclic Reactions / इलेक्ट्रोसाइक्लिक अभिक्रियाएँ", """
+Electrocyclic reactions involve ring opening or ring closure of a conjugated π system.
+इलेक्ट्रोसाइक्लिक अभिक्रियाओं में संयुग्मित π प्रणाली का ring opening या ring closure होता है।
+
+The allowed mode (conrotatory or disrotatory) depends on the number of π electrons and whether the reaction is thermal or photochemical.
+अनुमत conrotatory या disrotatory मार्ग π-इलेक्ट्रॉनों की संख्या और तापीय/प्रकाश-रासायनिक परिस्थितियों पर निर्भर करता है।
+""".trimIndent()),
+    TopicNote("Thermodynamics", "Gibbs Energy / गिब्स ऊर्जा", """
+At constant temperature and pressure, ΔG = ΔH − TΔS.
+स्थिर ताप और दाब पर ΔG = ΔH − TΔS।
+
+For a process under these conditions, negative ΔG indicates thermodynamic favorability in the forward direction, but does not specify the reaction rate.
+इन परिस्थितियों में ऋणात्मक ΔG आगे की दिशा में ऊष्मागतिक अनुकूलता बताता है, अभिक्रिया की गति नहीं।
+""".trimIndent())
+)
+
+private val mcqs = listOf(
+    Mcq("Organic Chemistry", "Which condition is part of Hückel aromaticity criteria?", listOf("Acyclic structure", "Continuous conjugation", "Only σ electrons", "Any 4n π electrons"), 1, "Aromatic systems require a cyclic, planar, continuously conjugated π system with (4n + 2) π electrons."),
+    Mcq("Inorganic Chemistry", "In an octahedral crystal field, which set is lower in energy?", listOf("eg", "t2g", "sp3", "All are equal"), 1, "For an ideal octahedral field, t2g is lower and eg is higher in energy."),
+    Mcq("Physical Chemistry", "For a first-order reaction, t1/2 equals:", listOf("k/0.693", "0.693/k", "1/k²", "2k"), 1, "The first-order half-life is independent of initial concentration: t1/2 = 0.693/k."),
+    Mcq("Spectroscopy", "Beer–Lambert law is commonly written as:", listOf("A = εlc", "PV = nRT", "ΔG = ΔH + TΔS", "E = mc"), 0, "Absorbance is A = εlc under suitable experimental conditions."),
+    Mcq("Coordination Chemistry", "A bidentate ligand usually contributes how many donor atoms?", listOf("One", "Two", "Three", "Four"), 1, "A bidentate ligand binds through two donor atoms."),
+    Mcq("Thermodynamics", "At constant T and P, Gibbs energy change is:", listOf("ΔH + TΔS", "ΔH − TΔS", "ΔS − TΔH", "ΔH/T"), 1, "ΔG = ΔH − TΔS."),
+    Mcq("Pericyclic Reactions", "Electrocyclic reactions involve:", listOf("Only proton transfer", "Ring opening or closure", "Only substitution", "Only oxidation"), 1, "Electrocyclic reactions interconvert a conjugated π system and a ring.")
+)
+
+private val videos = listOf(
+    "Organic Chemistry – CSIR-NET Chemical Science" to "https://www.youtube.com/results?search_query=CSIR+NET+Chemical+Science+Organic+Chemistry+Hindi",
+    "Inorganic Chemistry – CSIR-NET Chemical Science" to "https://www.youtube.com/results?search_query=CSIR+NET+Chemical+Science+Inorganic+Chemistry+Hindi",
+    "Physical Chemistry – CSIR-NET Chemical Science" to "https://www.youtube.com/results?search_query=CSIR+NET+Chemical+Science+Physical+Chemistry+Hindi",
+    "Spectroscopy – CSIR-NET" to "https://www.youtube.com/results?search_query=CSIR+NET+Chemical+Science+Spectroscopy",
+    "Pericyclic Reactions – CSIR-NET" to "https://www.youtube.com/results?search_query=CSIR+NET+Pericyclic+Reactions+Hindi",
+    "CGSET Chemical Science" to "https://www.youtube.com/results?search_query=CGSET+Chemical+Science+Chemistry"
+)
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { KarmaApp() }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun KarmaApp() {
+    val context = LocalContext.current
+    var tab by remember { mutableStateOf("Library") }
+    var selectedUnit by remember { mutableStateOf("All Units") }
+    var selectedNote by remember { mutableStateOf(topicNotes.first()) }
+    var query by remember { mutableStateOf("") }
+    var aiOutput by remember { mutableStateOf("") }
+    var aiTopic by remember { mutableStateOf("Aromaticity") }
+    var aiMode by remember { mutableStateOf("Notes") }
+    var qIndex by remember { mutableIntStateOf(0) }
+    var chosen by remember { mutableIntStateOf(-1) }
+    var checked by remember { mutableStateOf(false) }
+    var correctCount by remember { mutableIntStateOf(0) }
+
+    MaterialTheme(colorScheme = lightColorScheme(primary = Navy, secondary = Color(0xFF2D6B9F))) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Karma Learning Classes", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("CSIR-NET Chemical Science • हिंदी + English", color = Color.White, fontSize = 11.sp)
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Navy)
+                )
+            },
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(selected = tab == "Library", onClick = { tab = "Library" }, icon = { Icon(Icons.Default.Book, null) }, label = { Text("Library") })
+                    NavigationBarItem(selected = tab == "MCQ", onClick = { tab = "MCQ"; checked = false; chosen = -1 }, icon = { Icon(Icons.Default.Quiz, null) }, label = { Text("MCQ") })
+                    NavigationBarItem(selected = tab == "AI", onClick = { tab = "AI" }, icon = { Icon(Icons.Default.AutoAwesome, null) }, label = { Text("AI Generator") })
+                    NavigationBarItem(selected = tab == "More", onClick = { tab = "More" }, icon = { Icon(Icons.Default.Description, null) }, label = { Text("PDF / Video") })
+                }
+            }
+        ) { padding ->
+            Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+                when (tab) {
+                    "Library" -> LibraryScreen(selectedUnit, { selectedUnit = it }, query, { query = it }, selectedNote, { selectedNote = it }, onPdf = {
+                        try {
+                            exportPdf(context, "${selectedNote.title}\n\n${selectedNote.body}")
+                            Toast.makeText(context, "PDF saved in Downloads", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "PDF export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    })
+                    "MCQ" -> McqScreen(qIndex, { qIndex = it; chosen = -1; checked = false }, chosen, { chosen = it }, checked, {
+                        if (!checked && chosen >= 0) {
+                            if (chosen == mcqs[qIndex].answer) correctCount++
+                            checked = true
+                        }
+                    }, correctCount, {
+                        qIndex = (qIndex + 1) % mcqs.size; chosen = -1; checked = false
+                    })
+                    "AI" -> AiScreen(aiTopic, { aiTopic = it }, aiMode, { aiMode = it }, aiOutput, { aiOutput = it })
+                    else -> MoreScreen(onPdf = {
+                        try {
+                            exportPdf(context, "${selectedNote.title}\n\n${selectedNote.body}")
+                            Toast.makeText(context, "PDF saved in Downloads", Toast.LENGTH_LONG).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "PDF export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }, onVideo = { url -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) })
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryScreen(
+    unit: String, setUnit: (String) -> Unit, query: String, setQuery: (String) -> Unit,
+    selectedNote: TopicNote, setNote: (TopicNote) -> Unit, onPdf: () -> Unit
+) {
+    val units = listOf("All Units") + topicNotes.map { it.unit }.distinct()
+    val filtered = topicNotes.filter { (unit == "All Units" || it.unit == unit) && (query.isBlank() || it.title.contains(query, true) || it.body.contains(query, true)) }
+    Column(Modifier.fillMaxSize()) {
+        Text("Study Library / अध्ययन सामग्री", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+        Text("Organic • Inorganic • Physical • Spectroscopy • Pericyclic", color = Color.DarkGray, fontSize = 12.sp)
+        OutlinedTextField(query, setQuery, modifier = Modifier.fillMaxWidth(), label = { Text("Search topic / विषय खोजें") }, singleLine = true)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            var expanded by remember { mutableStateOf(false) }
+            Box {
+                OutlinedButton(onClick = { expanded = true }) { Text(unit, maxLines = 1) }
+                DropdownMenu(expanded, { expanded = false }) {
+                    units.forEach { item -> DropdownMenuItem(text = { Text(item) }, onClick = { setUnit(item); expanded = false }) }
+                }
+            }
+            OutlinedButton(onClick = onPdf) { Text("Export PDF") }
+        }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(filtered) { note ->
+                Card(onClick = { setNote(note) }, colors = CardDefaults.cardColors(containerColor = if (selectedNote == note) Color(0xFFE5EEFC) else MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text(note.unit, color = Navy, fontSize = 11.sp)
+                        Text(note.title, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            item {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                Text(selectedNote.title, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(selectedNote.unit, color = Navy)
+                Text(selectedNote.body, modifier = Modifier.padding(top = 8.dp))
+                Text("Starter library: sample revision notes only. Expand and verify against the current official syllabus.", color = Color.DarkGray, fontSize = 12.sp, modifier = Modifier.padding(top = 12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun McqScreen(
+    index: Int, setIndex: (Int) -> Unit, chosen: Int, setChosen: (Int) -> Unit,
+    checked: Boolean, check: () -> Unit, correctCount: Int, next: () -> Unit
+) {
+    val q = mcqs[index]
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Practice MCQ / अभ्यास प्रश्न", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Question ${index + 1}/${mcqs.size} • Unit: ${q.unit}")
+        Text(q.question, fontWeight = FontWeight.SemiBold)
+        q.options.forEachIndexed { i, option ->
+            Card(onClick = { if (!checked) setChosen(i) }, colors = CardDefaults.cardColors(containerColor = if (chosen == i) Color(0xFFDDEBFF) else MaterialTheme.colorScheme.surfaceVariant)) {
+                Text(option, Modifier.fillMaxWidth().padding(14.dp))
+            }
+        }
+        if (checked) {
+            Text(if (chosen == q.answer) "Correct / सही उत्तर" else "Answer / सही उत्तर: ${q.options[q.answer]}",
+                color = if (chosen == q.answer) Color(0xFF187344) else Color(0xFFB3261E), fontWeight = FontWeight.Bold)
+            Text(q.explanation)
+            Button(onClick = next, modifier = Modifier.fillMaxWidth()) { Text("Next question / अगला प्रश्न") }
+        } else {
+            Button(onClick = check, enabled = chosen >= 0, modifier = Modifier.fillMaxWidth()) { Text("Check answer / उत्तर जाँचें") }
+        }
+        Text("Correct answers in this session: $correctCount")
+        Text("The starter includes illustrative practice questions, not a complete verified PYQ archive.", color = Color.DarkGray, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun AiScreen(topic: String, setTopic: (String) -> Unit, mode: String, setMode: (String) -> Unit, output: String, setOutput: (String) -> Unit) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("AI Study Generator", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("टॉपिक लिखें और स्थानीय demo draft बनाएँ। इस starter में cloud AI जुड़ा नहीं है।")
+        OutlinedTextField(topic, setTopic, modifier = Modifier.fillMaxWidth(), label = { Text("Topic / विषय") }, singleLine = true)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = mode == "Notes", onClick = { setMode("Notes") }, label = { Text("Notes") })
+            FilterChip(selected = mode == "MCQ", onClick = { setMode("MCQ") }, label = { Text("MCQ set") })
+        }
+        Button(onClick = {
+            val safeTopic = topic.ifBlank { "Chemical Science" }
+            setOutput(if (mode == "Notes") {
+                "DEMO STUDY NOTES / नमूना नोट्स\nTopic: $safeTopic\n\n1. Definition / परिभाषा\nWrite the core definition of $safeTopic and identify its key terms.\n\n2. Key concepts / मुख्य अवधारणाएँ\n• Principle and assumptions\n• Important equations or mechanisms\n• Common exam traps\n\n3. CSIR-NET practice / अभ्यास\nCreate a concept map, then solve questions of increasing difficulty.\n\nImportant: This is a template draft, not AI-generated factual content. Verify details with trusted textbooks and the official syllabus."
+            } else {
+                "DEMO MCQ TEMPLATE / नमूना MCQ प्रारूप\nTopic: $safeTopic\n\nQ1. Which statement about $safeTopic is correct?\nA. Option A\nB. Option B\nC. Option C\nD. Option D\n\nAnswer: To be filled after checking a trusted source.\nExplanation: Add a step-by-step concept-based explanation.\n\nImportant: Placeholder only; this is not a real generated or validated question."
+            })
+        }, modifier = Modifier.fillMaxWidth()) { Text("Create offline draft / ड्राफ्ट बनाएँ") }
+        if (output.isNotBlank()) {
+            Card { Text(output, Modifier.fillMaxWidth().padding(14.dp)) }
+        }
+        Text("Free AI integration roadmap: connect a supported AI provider through a secure backend or Firebase AI Logic after checking current free quotas. Never embed secret API keys in the APK.", color = Color.DarkGray, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun MoreScreen(onPdf: () -> Unit, onVideo: (String) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Text("PDF & Video / PDF और वीडियो", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = onPdf, modifier = Modifier.fillMaxWidth()) { Text("Export selected starter note as PDF") }
+        Text("Video search links / वीडियो खोजें", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 6.dp))
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(videos) { item ->
+                Card(onClick = { onVideo(item.second) }, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Default.PlayCircle, null, tint = Navy)
+                        Text(item.first)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun exportPdf(context: android.content.Context, content: String) {
+    val pdf = PdfDocument()
+    val width = 595
+    val height = 842
+    val margin = 40f
+    val paint = Paint().apply { textSize = 11f; color = android.graphics.Color.BLACK; isAntiAlias = true }
+    val lines = content.lines().flatMap { if (it.length <= 86) listOf(it) else it.chunked(86) }
+    var index = 0
+    var pageNum = 1
+    while (index < lines.size) {
+        val info = PdfDocument.PageInfo.Builder(width, height, pageNum).create()
+        val page = pdf.startPage(info)
+        var y = margin + 16f
+        page.canvas.drawText("Karma Learning Classes - CSIR-NET Chemical Science", margin, y, paint)
+        y += 24f
+        while (index < lines.size && y < height - margin) {
+            page.canvas.drawText(lines[index].take(100), margin, y, paint)
+            y += 16f
+            index++
+        }
+        pdf.finishPage(page)
+        pageNum++
+    }
+    val values = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, "Karma_CSIR_NET_Study_Notes.pdf")
+        put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+        put(MediaStore.Downloads.IS_PENDING, 1)
+    }
+    val resolver = context.contentResolver
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: error("Unable to create PDF")
+    resolver.openOutputStream(uri)?.use { pdf.writeTo(it) } ?: error("Unable to write PDF")
+    values.clear()
+    values.put(MediaStore.Downloads.IS_PENDING, 0)
+    resolver.update(uri, values, null, null)
+    pdf.close()
+}
+''',
+"README.md": r'''
+# Karma Learning Classes — CSIR-NET Chemical Science Android Starter
+
+## Included
+- Kotlin + Jetpack Compose native Android app.
+- Bilingual starter notes for Organic, Inorganic, Physical, Spectroscopy, Coordination, Pericyclic and Thermodynamics topics.
+- Search and unit filter for the starter notes.
+- MCQ practice with answer checking, explanations, and session correct-answer count.
+- PDF export of the selected note to Android Downloads.
+- YouTube search links for CSIR-NET Chemical Science and CGSET.
+- AI Generator screen that creates offline *templates* for notes or MCQ. It clearly labels them as templates, not real AI output.
+
+## Important honesty/safety notes
+- This is a runnable starter project, not a finished commercial product or APK.
+- Actual cloud AI is NOT connected. The offline AI screen generates a template only.
+- Do not put provider API keys in the Android app. For real AI generation, use a secure backend or a supported Firebase AI Logic flow, and check current quotas, billing and terms before use.
+- The question set and notes are illustrative, not a complete or verified official PYQ archive. Review all chemistry content and align it to the current official syllabus before publication.
+- Video links open YouTube search pages, not curated individual videos.
+- The minimal Android PDF exporter uses the default canvas font; Devanagari rendering can vary by device. Use a proper embedded Unicode font for a polished release.
+
+## Open and run
+1. Install Android Studio (stable) and Android SDK Platform 35.
+2. Open this folder in Android Studio.
+3. Allow Gradle sync; install requested SDK/build components.
+4. Run on an emulator or Android phone.
+5. Test Library, MCQ, AI Generator, and PDF/Video screens.
+
+## Recommended next steps
+1. Replace YouTube search links with exact videos from Karma Learning Classes.
+2. Expand the topic library with reviewed bilingual notes.
+3. Add larger unit-wise practice sets and verified PYQs with year/source labels.
+4. Add persistent progress/bookmarks using Room or DataStore.
+5. Add a secure AI backend and enforce rate limits; never embed API secrets in the APK.
+6. Test PDF Hindi font rendering, accessibility, offline behavior and crash handling.
+7. Add privacy policy, app icon, release signing, and Play Store preparation if distributing.
+
+## Free-first plan
+Keep saved notes, practice questions, PDF export and video links usable without AI. Offer AI only through a provider with an available free tier/quota, and show a clear message if the quota is exhausted.
+'''
+}
+
+for rel, content in files.items():
+    path = os.path.join(base, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(textwrap.dedent(content).strip() + "\n")
+
+zip_path = "/mnt/data/Karma_CSIR_NET_Chemical_Science_Android_Starter.zip"
+with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    for root, dirs, filenames in os.walk(base):
+        for fn in filenames:
+            p = os.path.join(root, fn)
+            z.write(p, os.path.relpath(p, base))
+
+print("Created:", zip_path)
+print("Project includes Kotlin Android app, unit-wise sample notes, MCQ practice, offline AI templates, PDF export, video links, and README.")

@@ -1,0 +1,6 @@
+{
+  "name": "Karma CSIR-NET",
+  "description": "CSIR-NET Chemical Science study companion by Karma Learning Classes with bilingual notes, interactive MCQs, formula sheets, PDF export, and video lectures.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
